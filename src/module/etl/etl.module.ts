@@ -1,19 +1,22 @@
 import { DynamicModule, Module, Provider } from '@nestjs/common';
-import { TxEtlCron } from './service/cron/tx-etl-cron.service';
+import { TxEtlCron } from './cron/tx-etl-cron.service';
 import { EtlService } from './service/etl.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { NextDataWindowLoadQueryEntity } from './model/next-data-window-load-query.entity';
-import { TxApiClientService } from './service/tx-api-client.service';
+import { TxApiClientService } from './api/tx-api-client.service';
 import { DummyTxApiClient } from './api/dummy/dummy-tx-api.client';
 import { ConfigService } from '@nestjs/config';
-import { CoreModule } from '../core/core.module';
-
+import { FactTransactionEntity } from './model/fact-transaction.entity';
+import { AggregatedDataService } from './service/aggregated-data.service';
+import { AggregatedUserTxDataEntity } from './model/aggregated-user-tx-data.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([NextDataWindowLoadQueryEntity]), CoreModule],
+  imports: [
+    TypeOrmModule.forFeature([FactTransactionEntity, AggregatedUserTxDataEntity, NextDataWindowLoadQueryEntity]),
+  ],
   controllers: [],
   providers: [],
-  exports: [],
+  exports: [AggregatedDataService],
 })
 export class EtlModule {
   static forRoot(): DynamicModule {
@@ -33,6 +36,7 @@ export class EtlModule {
 
     providers.push(TxEtlCron);
     providers.push(EtlService);
+    providers.push(AggregatedDataService);
     return {
       module: EtlModule,
       providers: providers,

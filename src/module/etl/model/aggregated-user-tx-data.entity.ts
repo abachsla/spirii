@@ -1,7 +1,7 @@
 import { Column, Entity, PrimaryColumn } from 'typeorm';
 
-@Entity('aggregated_data')
-export class AggregatedTxData {
+@Entity('aggregated_user_tx_data')
+export class AggregatedUserTxDataEntity {
   @PrimaryColumn({ type: 'varchar', length: 255 })
   userId: string;
 

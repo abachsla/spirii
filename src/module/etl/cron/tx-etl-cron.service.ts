@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { EtlService } from '../etl.service';
+import { EtlService } from '../service/etl.service';
 
 @Injectable()
 export class TxEtlCron {

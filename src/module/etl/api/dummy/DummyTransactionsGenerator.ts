@@ -1,7 +1,10 @@
 import { TransactionDto, TransactionDtoType } from '../transaction.type';
 import { mockTransactionId } from '../../utils/mock-utils';
+import { Logger } from '@nestjs/common';
 
-export class DummyTransactionsService {
+export class DummyTransactionsGenerator {
+  private readonly logger = new Logger(DummyTransactionsGenerator.name);
+
   private readonly _userIds: Array<string> = Array.from(Array(200).keys()).map(id => '' + (id + 1));
   private readonly transactions: TransactionDto[] = [];
 
@@ -23,6 +26,7 @@ export class DummyTransactionsService {
   }
 
   private generateTransactions() {
+    this.logger.log('Generating dummy transaction list');
     let numOfTransaction = (1000 * Math.random()) >> 0;
     while (numOfTransaction--) {
       const id: string = mockTransactionId();
@@ -39,7 +43,7 @@ export class DummyTransactionsService {
   }
 
   private cleanupTransactions() {
-    const minimalCreatedTime = Date.now() - 1000 * 60 * 2;
+    const minimalCreatedTime = Date.now() - 1000 * 60 * 10;
     // Remove transactions older than 2 minutes
     while (this.transactions.length > 0 && this.transactions[0].createdAt.getTime() < minimalCreatedTime) {
       this.transactions.shift();

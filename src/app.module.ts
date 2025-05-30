@@ -2,10 +2,9 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import ormConfig from './orm/orm.config';
 import { MongooseModule } from '@nestjs/mongoose';
-import { CoreModule } from './module/core/core.module';
+import { FrontModule } from './module/front/frontModule';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
-import { EtlModule } from './module/etl/etl.module';
 
 @Module({
   imports: [
@@ -15,8 +14,7 @@ import { EtlModule } from './module/etl/etl.module';
       envFilePath: ['.env.development', '.env.production', '.env'],
       isGlobal: true,
     }),
-    CoreModule,
-    EtlModule.forRoot(),
+    FrontModule,
     ScheduleModule.forRoot(),
   ],
   providers: [],

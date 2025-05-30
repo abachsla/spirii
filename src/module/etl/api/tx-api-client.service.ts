@@ -1,7 +1,7 @@
-import { TxApiClient } from '../api/tx-api.client';
+import { TxApiClient } from './tx-api.client';
 import { Promise } from 'mongoose';
 import { Injectable } from '@nestjs/common';
-import { TransactionDtoResponse } from '../api/transaction.type';
+import { TransactionDtoResponse } from './transaction.type';
 
 @Injectable()
 export class TxApiClientService implements TxApiClient {

@@ -1,14 +1,16 @@
-import { TxApiClient } from '../tx-api.client';
 import { TransactionDto, TransactionDtoResponse } from '../transaction.type';
-import { DummyTransactionsService } from './dummy-transactions.service';
-import { TxApiClientService } from '../../service/tx-api-client.service';
+import { DummyTransactionsGenerator } from './DummyTransactionsGenerator';
+import { TxApiClientService } from '../tx-api-client.service';
+import { Logger } from '@nestjs/common';
 
 export class DummyTxApiClient extends TxApiClientService {
-  private readonly transactionsService: DummyTransactionsService
+  private readonly logger = new Logger(DummyTxApiClient.name);
+
+  private readonly transactionsService: DummyTransactionsGenerator;
 
   public constructor() {
     super();
-    this.transactionsService = new DummyTransactionsService();
+    this.transactionsService = new DummyTransactionsGenerator();
   }
 
   async loadTxWindow(
@@ -21,10 +23,12 @@ export class DummyTxApiClient extends TxApiClientService {
       throw Error(`Please provide correct dates.`);
     }
 
+    this.logger.log('Dummy TX Api client is used to provide transactions !');
     const transactionsInRange = this.transactionsService.getTransactions(startDate, endDate);
 
     const pn = pageNumber || 1;
     const ps = pageSize || 1000;
+
     let items: Array<TransactionDto> = [];
     const startIndex = (pn - 1) * ps;
     if (startIndex < transactionsInRange.length) {
@@ -38,7 +42,7 @@ export class DummyTxApiClient extends TxApiClientService {
         itemCount: items.length,
         itemsPerPage: ps,
         totalItems: transactionsInRange.length,
-        totalPages: Math.ceil(transactionsInRange.length / ps),
+        totalPages: Math.ceil(transactionsInRange.length / ps) + 1,
       },
     });
   }

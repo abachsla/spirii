@@ -13,7 +13,4 @@ export class NextDataWindowLoadQueryEntity {
 
   @Column({ type: 'int', nullable: true })
   pageNumber: number | null;
-
-  @Column({ type: 'int', nullable: true })
-  pageCount: number | null;
 }
