@@ -19,7 +19,6 @@ export class AggregationController {
     @Query('startDate', new ParseDatePipe()) starDate: Date,
     @Query('endDate', new ParseDatePipe()) endDate: Date,
   ): Promise<{ userId: string; amount: number }> {
-    this.logger.log('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', starDate, endDate);
     return await this.aggregatedDataService.getRequestedPayouts(userId, starDate, endDate);
   }
 }

@@ -47,16 +47,25 @@ export class AggregatedDataService {
   }
 
   @Transactional()
-  async createFact(
+  async createOrUpdateFact(
     userId: string,
     amount: Decimal,
     type: TransactionType,
     startDate: Date,
     endDate: Date,
   ): Promise<FactTransactionEntity> {
-    const fact = new FactTransactionEntity();
+    // instead of saving new record we should check for existing one and update it
+    // because existing record could be created for same user and same period by data from other page
+    let fact = await this.factTransactionEntityRepository.findOne({ where: { userId, type, startDate, endDate } });
+
+    if (!fact) {
+      fact = new FactTransactionEntity();
+      fact.amount = amount?.toNumber() || 0;
+    } else {
+      fact.amount = (fact.amount || 0) + (amount?.toNumber() || 0);
+    }
+
     fact.userId = userId;
-    fact.amount = amount?.toNumber();
     fact.type = type;
     fact.startDate = startDate;
     fact.endDate = endDate;

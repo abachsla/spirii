@@ -17,7 +17,7 @@ npm run db:drop
 npm run db:run
 ```
 
-Cleanup everything 
+Cleanup everything
 ```bash
 docker-compose down -v
 ```
@@ -32,7 +32,7 @@ http://localhost:3000/aggregated-data/<userId>/payouts?startDate=2025-05-30T00:0
 ## Automated Testing proposal
 To test aggregation functionality we have to mock database and external APIs so ...
 * for database  some kind of "In Memory DB" which can be initialized with fixture data from json/yaml file would work or
-use test container when we spin up fresh and initialize it for particular test.
+  use test container when we spin up fresh and initialize it for particular test.
 * external API can be mocked up to return hardcoded/generated values
 
 after than we can call http endpoint and verify database state (data in target tables)
@@ -45,7 +45,7 @@ This version is a draft, and it lacks many things and has bugs as:
    Hence, data consistency could be broken because of concurrent cron job execution.
 
 2. It was not really clear from the task description what "list of paidouts" means, and should it be provided by date range or not ?
-   So I added a new type of transactions and added date range parameters to the query. 
+   So I added a new type of transactions and added date range parameters to the query.
 
 3. Historical data preloading is not covered at all.
 4. Many places has FIXME notes indicating possible problems in real world usage.

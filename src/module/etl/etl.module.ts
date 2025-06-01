@@ -1,5 +1,4 @@
 import { DynamicModule, Module, Provider } from '@nestjs/common';
-import { TxEtlCron } from './cron/tx-etl-cron.service';
 import { EtlService } from './service/etl.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { NextDataWindowLoadQueryEntity } from './model/next-data-window-load-query.entity';
@@ -34,7 +33,6 @@ export class EtlModule {
       inject: [ConfigService],
     });
 
-    providers.push(TxEtlCron);
     providers.push(EtlService);
     providers.push(AggregatedDataService);
     return {

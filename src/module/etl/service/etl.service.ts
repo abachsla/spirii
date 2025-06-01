@@ -7,13 +7,51 @@ import { AggregatedUserTxDataEntity } from '../model/aggregated-user-tx-data.ent
 import { TxApiClientService } from '../api/tx-api-client.service';
 import Decimal from 'decimal.js';
 import { TransactionDtoResponse, TransactionDtoType } from '../api/transaction.type';
-import { FactTransactionEntity, TransactionType } from '../model/fact-transaction.entity';
+import { TransactionType } from '../model/fact-transaction.entity';
+import { BehaviorSubject, from, map, Observable, switchMap, timer } from 'rxjs';
 
 type AggregatedUserChange = {
   earned: Decimal;
   spent: Decimal;
   payout: Decimal;
   paidout: Decimal;
+};
+
+class TxApiInvocationRegulation {
+  // Keep record for last 5 requests
+  private static readonly MAX_REQUESTS_PER_MINUTE = 5;
+  private readonly apiInvocationLog: Date[] = [];
+
+  public record(): void {
+    this.apiInvocationLog.push(new Date());
+
+    if (this.apiInvocationLog.length > TxApiInvocationRegulation.MAX_REQUESTS_PER_MINUTE) {
+      this.apiInvocationLog.shift();
+    }
+  }
+
+  public timeToWait(): number {
+    if (!this.apiInvocationLog.length) {
+      return 0;
+    }
+
+    const now = new Date();
+    const diff = 60000 - (now.getTime() - this.apiInvocationLog[0].getTime());
+
+    return diff > 0 ? diff : 0;
+  }
+
+  // Used to ensure that we will not call TX Api more than 5 times per minute
+  public inhibitor(): Observable<Date> {
+    return timer(this.timeToWait()).pipe(map(() => new Date()));
+  }
+}
+
+type TxApiResponsePipeTransfer = {
+  startDate: Date;
+  endDate: Date;
+  pageNumber: number | null;
+  data: TransactionDtoResponse | null;
 };
 
 @Injectable()
@@ -23,20 +61,33 @@ export class EtlService {
 
   private readonly logger = new Logger(EtlService.name);
 
+  private readonly apiInvocationRegulation = new TxApiInvocationRegulation();
+  private readonly heartBit = new BehaviorSubject(true);
+
   constructor(
     @InjectRepository(NextDataWindowLoadQueryEntity)
     private readonly nxtDataWindowLoadQueryRepository: Repository<NextDataWindowLoadQueryEntity>,
     private readonly txApiClient: TxApiClientService,
     private readonly aggregatedDataService: AggregatedDataService,
     private readonly dataSource: DataSource,
-  ) {}
+  ) {
+    this.heartBit
+      .pipe(
+        switchMap(() => this.apiInvocationRegulation.inhibitor()),
+        switchMap(() => from(this.callTxApi())),
+      )
+      .subscribe((response: TxApiResponsePipeTransfer) => {
+        this.processData(response)
+          .catch(e => {
+            this.logger.error('Unexpected error while processing data', e);
+          })
+          .finally(() => {
+            this.heartBit.next(true);
+          });
+      });
+  }
 
-  /**
-   * TODO refactor code to get rid from following problems:
-   * 1 concurrent execution when previous task was not completed but new one is triggered ... add locking
-   * 2 page size max value must be configured
-   */
-  public async loadNextTxWindow() {
+  public async callTxApi(): Promise<TxApiResponsePipeTransfer> {
     this.logger.log('Starting to load TX data window');
 
     // Set default values for case when application just initialized and there is no any data in DB
@@ -55,16 +106,45 @@ export class EtlService {
     }
 
     // If end date in the future then nothing to do and we should wait when current window close
-    if (endDate.getTime() > new Date().getTime()) {
-      this.logger.log(
-        `All data is up to date and next period window (from ${startDate.toString()} to ${endDate.toString()}) is still open`,
+    const windowEndUntilNow = endDate.getTime() - new Date().getTime();
+
+    // If end date already in the future then we can sleep for some time before continuing
+    return new Promise<TxApiResponsePipeTransfer>(resolve => {
+      setTimeout(
+        () => {
+          const emptyResponse: TxApiResponsePipeTransfer = {
+            startDate,
+            endDate,
+            pageNumber,
+            data: null,
+          };
+
+          this.doTxApiCall(startDate, endDate, pageNumber)
+            .then(txWindow => resolve({ ...emptyResponse, data: txWindow }))
+            .catch(() => resolve(emptyResponse));
+        },
+        windowEndUntilNow > 0 ? windowEndUntilNow + 1 : 0,
       );
+    });
+  }
+
+  protected async doTxApiCall(startDate: Date, endDate: Date, pageNumber: number | null) {
+    this.logger.log(`Requesting TX data window from ${startDate.toString()} to ${endDate.toString()}`);
+
+    // FIXME page size max value must be configured
+    const txWindow = await this.txApiClient.loadTxWindow(startDate, endDate, pageNumber, 1000);
+    this.apiInvocationRegulation.record();
+
+    return txWindow;
+  }
+
+  public async processData(windowResponse: TxApiResponsePipeTransfer): Promise<void> {
+    if (windowResponse.data === null) {
+      this.logger.warn('No data received from TX Api call function');
       return;
     }
 
-    this.logger.log(`Requesting TX data window from ${startDate.toString()} to ${endDate.toString()}`);
-
-    const txWindow = await this.txApiClient.loadTxWindow(startDate, endDate, pageNumber, 1000);
+    const txWindow = windowResponse.data;
     const aggregatedChangeByUser = this.calculateChanges(txWindow);
 
     const queryRunner = this.dataSource.createQueryRunner();
@@ -74,25 +154,25 @@ export class EtlService {
     try {
       for (const [userId, agg] of aggregatedChangeByUser) {
         await this.applyUserChange(userId, agg);
-        await this.saveAggFact(userId, agg, startDate, endDate);
+        await this.saveAggFact(userId, agg, windowResponse.startDate, windowResponse.endDate);
       }
 
       this.logger.log(
-        `Loaded page ${txWindow.meta.currentPage} of ${txWindow.meta.totalPages} for [${startDate.toString()} / ${endDate.toString()}]`,
+        `Loaded page ${txWindow.meta.currentPage} of ${txWindow.meta.totalPages} for [${windowResponse.startDate.toString()} / ${windowResponse.endDate.toString()}]`,
       );
 
       // Calculate next window query parameters
-      const newNextWindowQueryParamsEntity = nextQueryParamsEntity || new NextDataWindowLoadQueryEntity();
+      const newNextWindowQueryParamsEntity = new NextDataWindowLoadQueryEntity();
       // If all pages are loaded for current period then switch to next one
       if (txWindow.meta.currentPage >= txWindow.meta.totalPages) {
-        newNextWindowQueryParamsEntity.startDate = new Date(endDate.getTime() + 1);
+        newNextWindowQueryParamsEntity.startDate = new Date(windowResponse.endDate.getTime() + 1);
         newNextWindowQueryParamsEntity.endDate = new Date(
           newNextWindowQueryParamsEntity.startDate.getTime() + EtlService.HISTORY_PRELOAD_PERIOD,
         );
         newNextWindowQueryParamsEntity.pageNumber = null;
       } else {
-        newNextWindowQueryParamsEntity.startDate = startDate;
-        newNextWindowQueryParamsEntity.endDate = endDate;
+        newNextWindowQueryParamsEntity.startDate = windowResponse.startDate;
+        newNextWindowQueryParamsEntity.endDate = windowResponse.endDate;
         newNextWindowQueryParamsEntity.pageNumber = txWindow.meta.currentPage + 1;
       }
 
@@ -190,11 +270,23 @@ export class EtlService {
     startDate: Date,
     endDate: Date,
   ): Promise<void> {
-    await this.aggregatedDataService.createFact(userId, agg.earned, TransactionType.EARNED, startDate, endDate);
-    await this.aggregatedDataService.createFact(userId, agg.spent, TransactionType.SPENT, startDate, endDate);
-    await this.aggregatedDataService.createFact(userId, agg.payout, TransactionType.PAY_OUT, startDate, endDate);
+    await this.aggregatedDataService.createOrUpdateFact(userId, agg.earned, TransactionType.EARNED, startDate, endDate);
+    await this.aggregatedDataService.createOrUpdateFact(userId, agg.spent, TransactionType.SPENT, startDate, endDate);
+    await this.aggregatedDataService.createOrUpdateFact(
+      userId,
+      agg.payout,
+      TransactionType.PAY_OUT,
+      startDate,
+      endDate,
+    );
     // FIXME I rely on assumption that Transaction API will return PAID_OUTs as a separate transaction, otherwise
     // code must be refactored and I must do currency conversion here from payout against configured/dynamic exchange rate
-    await this.aggregatedDataService.createFact(userId, agg.paidout, TransactionType.PAID_OUT, startDate, endDate);
+    await this.aggregatedDataService.createOrUpdateFact(
+      userId,
+      agg.paidout,
+      TransactionType.PAID_OUT,
+      startDate,
+      endDate,
+    );
   }
 }
